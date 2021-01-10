@@ -78,7 +78,7 @@ readline() {
     }
     ch = in->get();
   }
-  
+
   return PyBytes_FromStringAndSize(line.data(), line.size());
 }
 

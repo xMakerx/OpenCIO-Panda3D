@@ -61,7 +61,7 @@ except ImportError:
     def pytest_imports():
         return []
 
-hiddenImports = {
+defaultHiddenImports = {
     'pytest': pytest_imports(),
     'pkg_resources': [
         'pkg_resources.*.*',
@@ -77,6 +77,8 @@ hiddenImports = {
         'numpy.core._dtype_ctypes',
         'numpy.core._methods',
     ],
+    'pandas.compat': ['lzma', 'cmath'],
+    'pandas._libs.tslibs.conversion': ['pandas._libs.tslibs.base'],
 }
 
 # These are overrides for specific modules.
@@ -163,23 +165,23 @@ class CompilationEnvironment:
         if self.platform.startswith('win'):
             self.Python = sysconf.PREFIX
 
-            if ('VCINSTALLDIR' in os.environ):
+            if 'VCINSTALLDIR' in os.environ:
                 self.MSVC = os.environ['VCINSTALLDIR']
-            elif (Filename('/c/Program Files/Microsoft Visual Studio 9.0/VC').exists()):
+            elif Filename('/c/Program Files/Microsoft Visual Studio 9.0/VC').exists():
                 self.MSVC = Filename('/c/Program Files/Microsoft Visual Studio 9.0/VC').toOsSpecific()
-            elif (Filename('/c/Program Files (x86)/Microsoft Visual Studio 9.0/VC').exists()):
+            elif Filename('/c/Program Files (x86)/Microsoft Visual Studio 9.0/VC').exists():
                 self.MSVC = Filename('/c/Program Files (x86)/Microsoft Visual Studio 9.0/VC').toOsSpecific()
-            elif (Filename('/c/Program Files/Microsoft Visual Studio .NET 2003/Vc7').exists()):
+            elif Filename('/c/Program Files/Microsoft Visual Studio .NET 2003/Vc7').exists():
                 self.MSVC = Filename('/c/Program Files/Microsoft Visual Studio .NET 2003/Vc7').toOsSpecific()
             else:
                 print('Could not locate Microsoft Visual C++ Compiler! Try running from the Visual Studio Command Prompt.')
                 sys.exit(1)
 
-            if ('WindowsSdkDir' in os.environ):
+            if 'WindowsSdkDir' in os.environ:
                 self.PSDK = os.environ['WindowsSdkDir']
-            elif (platform.architecture()[0] == '32bit' and Filename('/c/Program Files/Microsoft Platform SDK for Windows Server 2003 R2').exists()):
+            elif platform.architecture()[0] == '32bit' and Filename('/c/Program Files/Microsoft Platform SDK for Windows Server 2003 R2').exists():
                 self.PSDK = Filename('/c/Program Files/Microsoft Platform SDK for Windows Server 2003 R2').toOsSpecific()
-            elif (os.path.exists(os.path.join(self.MSVC, 'PlatformSDK'))):
+            elif os.path.exists(os.path.join(self.MSVC, 'PlatformSDK')):
                 self.PSDK = os.path.join(self.MSVC, 'PlatformSDK')
             else:
                 print('Could not locate the Microsoft Windows Platform SDK! Try running from the Visual Studio Command Prompt.')
@@ -197,7 +199,7 @@ class CompilationEnvironment:
                 self.suffix64 = '\\amd64'
 
             # If it is run by makepanda, it handles the MSVC and PlatformSDK paths itself.
-            if ('MAKEPANDA' in os.environ):
+            if 'MAKEPANDA' in os.environ:
                 self.compileObjExe = 'cl /wd4996 /Fo%(basename)s.obj /nologo /c %(MD)s /Zi /O2 /Ob2 /EHsc /Zm300 /W3 /I"%(pythonIPath)s" %(filename)s'
                 self.compileObjDll = self.compileObjExe
                 self.linkExe = 'link /nologo /MAP:NUL /FIXED:NO /OPT:REF /STACK:4194304 /INCREMENTAL:NO /LIBPATH:"%(python)s\\libs"  /out:%(basename)s.exe %(basename)s.obj'
@@ -235,7 +237,7 @@ class CompilationEnvironment:
             self.linkExe = "%(CC)s -o %(basename)s %(basename)s.o -L/usr/local/lib -lpython%(pythonVersion)s"
             self.linkDll = "%(LDSHARED)s -o %(basename)s.so %(basename)s.o -L/usr/local/lib -lpython%(pythonVersion)s"
 
-            if (os.path.isdir("/usr/PCBSD/local/lib")):
+            if os.path.isdir("/usr/PCBSD/local/lib"):
                 self.linkExe += " -L/usr/PCBSD/local/lib"
                 self.linkDll += " -L/usr/PCBSD/local/lib"
 
@@ -643,6 +645,51 @@ okMissing = [
     'collections.Sequence', 'numpy_distutils',
     ]
 
+# Since around macOS 10.15, Apple's codesigning process has become more strict.
+# Appending data to the end of a Mach-O binary is now explicitly forbidden. The
+# solution is to embed our own segment into the binary so it can be properly
+# signed.
+mach_header_64_layout = '<IIIIIIII'
+
+# Each load command is guaranteed to start with the command identifier and
+# command size. We'll call this the "lc header".
+lc_header_layout = '<II'
+
+# Each Mach-O segment is made up of sections. We need to change both the segment
+# and section information, so we'll need to know the layout of a section as
+# well.
+section64_header_layout = '<16s16sQQIIIIIIII'
+
+# These are all of the load commands we'll need to modify parts of.
+LC_SEGMENT_64 = 0x19
+LC_DYLD_INFO_ONLY = 0x80000022
+LC_SYMTAB = 0x02
+LC_DYSYMTAB = 0x0B
+LC_FUNCTION_STARTS = 0x26
+LC_DATA_IN_CODE = 0x29
+
+lc_layouts = {
+    LC_SEGMENT_64: '<II16sQQQQIIII',
+    LC_DYLD_INFO_ONLY: '<IIIIIIIIIIII',
+    LC_SYMTAB: '<IIIIII',
+    LC_DYSYMTAB: '<IIIIIIIIIIIIIIIIIIII',
+    LC_FUNCTION_STARTS: '<IIII',
+    LC_DATA_IN_CODE: '<IIII',
+}
+
+# All of our modifications involve sliding some offsets, since we need to insert
+# our data in the middle of the binary (we can't just put the data at the end
+# since __LINKEDIT must be the last segment).
+lc_indices_to_slide = {
+    b'__PANDA': [4, 6],
+    b'__LINKEDIT': [3, 5],
+    LC_DYLD_INFO_ONLY: [2, 4, 8, 10],
+    LC_SYMTAB: [2, 4],
+    LC_DYSYMTAB: [14],
+    LC_FUNCTION_STARTS: [2],
+    LC_DATA_IN_CODE: [2],
+}
+
 class Freezer:
     class ModuleDef:
         def __init__(self, moduleName, filename = None,
@@ -710,7 +757,7 @@ class Freezer:
             return 'ModuleDef(%s)' % (', '.join(args))
 
     def __init__(self, previous = None, debugLevel = 0,
-                 platform = None, path=None):
+                 platform = None, path=None, hiddenImports=None):
         # Normally, we are freezing for our own platform.  Change this
         # if untrue.
         self.platform = platform or PandaSystem.getPlatform()
@@ -783,6 +830,11 @@ class Freezer:
                 path = list(getattr(module, '__path__'))
                 if path:
                     modulefinder.AddPackagePath(moduleName, path[0])
+
+        # Module with non-obvious dependencies
+        self.hiddenImports = defaultHiddenImports.copy()
+        if hiddenImports is not None:
+            self.hiddenImports.update(hiddenImports)
 
         # Suffix/extension for Python C extension modules
         if self.platform == PandaSystem.getPlatform():
@@ -957,8 +1009,8 @@ class Freezer:
         if not newName:
             newName = moduleName
 
-        assert(moduleName.endswith('.*'))
-        assert(newName.endswith('.*'))
+        assert moduleName.endswith('.*')
+        assert newName.endswith('.*')
 
         mdefs = {}
 
@@ -968,7 +1020,7 @@ class Freezer:
         parentNames = [(parentName, newParentName)]
 
         if parentName.endswith('.*'):
-            assert(newParentName.endswith('.*'))
+            assert newParentName.endswith('.*')
             # Another special case.  The parent name "*" means to
             # return all possible directories within a particular
             # directory.
@@ -1125,7 +1177,7 @@ class Freezer:
 
         # Check if any new modules we found have "hidden" imports
         for origName in list(self.mf.modules.keys()):
-            hidden = hiddenImports.get(origName, [])
+            hidden = self.hiddenImports.get(origName, [])
             for modname in hidden:
                 if modname.endswith('.*'):
                     mdefs = self._gatherSubmodules(modname, implicit = True)
@@ -1301,7 +1353,7 @@ class Freezer:
         for moduleName, module in list(self.mf.modules.items()):
             if module.__code__:
                 co = self.mf.replace_paths_in_code(module.__code__)
-                module.__code__ = co;
+                module.__code__ = co
 
     def __addPyc(self, multifile, filename, code, compressionLevel):
         if code:
@@ -1806,20 +1858,35 @@ class Freezer:
             # Align to page size, so that it can be mmapped.
             blob_align = 4096
 
-        # Add padding before the blob if necessary.
-        blob_offset = len(stub_data)
-        if (blob_offset & (blob_align - 1)) != 0:
-            pad = (blob_align - (blob_offset & (blob_align - 1)))
-            stub_data += (b'\0' * pad)
-            blob_offset += pad
-        assert (blob_offset % blob_align) == 0
-        assert blob_offset == len(stub_data)
-
         # Also determine the total blob size now.  Add padding to the end.
         blob_size = pool_offset + len(pool)
-        if blob_size & 31 != 0:
-            pad = (32 - (blob_size & 31))
+        if blob_size & (blob_align - 1) != 0:
+            pad = (blob_align - (blob_size & (blob_align - 1)))
             blob_size += pad
+
+        # TODO: Support creating custom sections in universal binaries.
+        append_blob = True
+        if self.platform.startswith('macosx') and len(bitnesses) == 1:
+            # If our deploy-stub has a __PANDA segment, we know we're meant to
+            # put our blob there rather than attach it to the end.
+            load_commands = self._parse_macho_load_commands(stub_data)
+            if b'__PANDA' in load_commands.keys():
+                append_blob = False
+
+        if self.platform.startswith("macosx") and not append_blob:
+            # Take this time to shift any Mach-O structures around to fit our
+            # blob. We don't need to worry about aligning the offset since the
+            # compiler already took care of that when creating the segment.
+            blob_offset = self._shift_macho_structures(stub_data, load_commands, blob_size)
+        else:
+            # Add padding before the blob if necessary.
+            blob_offset = len(stub_data)
+            if (blob_offset & (blob_align - 1)) != 0:
+                pad = (blob_align - (blob_offset & (blob_align - 1)))
+                stub_data += (b'\0' * pad)
+                blob_offset += pad
+            assert (blob_offset % blob_align) == 0
+            assert blob_offset == len(stub_data)
 
         # Calculate the offsets for the variables.  These are pointers,
         # relative to the beginning of the blob.
@@ -1900,9 +1967,13 @@ class Freezer:
             blob += struct.pack('<Q', blob_offset)
 
         with open(target, 'wb') as f:
-            f.write(stub_data)
-            assert f.tell() == blob_offset
-            f.write(blob)
+            if append_blob:
+                f.write(stub_data)
+                assert f.tell() == blob_offset
+                f.write(blob)
+            else:
+                stub_data[blob_offset:blob_offset + blob_size] = blob
+                f.write(stub_data)
 
         os.chmod(target, 0o755)
         return target
@@ -2155,12 +2226,14 @@ class Freezer:
 
                 strings = macho_data[stroff:stroff+strsize]
 
-                for i in range(nsyms):
+                for j in range(nsyms):
                     strx, type, sect, desc, value = struct.unpack_from(nlist_struct, macho_data, symoff)
                     symoff += nlist_size
                     name = strings[strx : strings.find(b'\0', strx)]
 
-                    if name == b'_' + symbol_name:
+                    # If the entry's type has any bits at 0xe0 set, it's a debug
+                    # symbol, and will point us to the wrong place.
+                    if name == b'_' + symbol_name and type & 0xe0 == 0:
                         # Find out in which segment this is.
                         for vmaddr, vmsize, fileoff in segments:
                             # Is it defined in this segment?
@@ -2169,6 +2242,59 @@ class Freezer:
                                 # Yes, so return the symbol offset.
                                 return fileoff + rel
                         print("Could not find memory address for symbol %s" % (symbol_name))
+
+    def _parse_macho_load_commands(self, macho_data):
+        """Returns the list of load commands from macho_data."""
+        mach_header_64 = list(
+            struct.unpack_from(mach_header_64_layout, macho_data, 0))
+
+        num_load_commands = mach_header_64[4]
+
+        load_commands = {}
+
+        curr_lc_offset = struct.calcsize(mach_header_64_layout)
+        for i in range(num_load_commands):
+            lc = struct.unpack_from(lc_header_layout, macho_data, curr_lc_offset)
+            layout = lc_layouts.get(lc[0])
+            if layout:
+                # Make it a list since we want to mutate it.
+                lc = list(struct.unpack_from(layout, macho_data, curr_lc_offset))
+
+                if lc[0] == LC_SEGMENT_64:
+                    stripped_name = lc[2].rstrip(b'\0')
+                    if stripped_name in [b'__PANDA', b'__LINKEDIT']:
+                        load_commands[stripped_name] = (curr_lc_offset, lc)
+                else:
+                    load_commands[lc[0]] = (curr_lc_offset, lc)
+
+            curr_lc_offset += lc[1]
+
+        return load_commands
+
+    def _shift_macho_structures(self, macho_data, load_commands, blob_size):
+        """Given the stub and the size of our blob, make room for it and edit
+        all of the necessary structures to keep the binary valid. Returns the
+        offset where the blob should be placed."""
+
+        for lc_key in load_commands.keys():
+            for index in lc_indices_to_slide[lc_key]:
+                load_commands[lc_key][1][index] += blob_size
+
+            if lc_key == b'__PANDA':
+                section_header_offset = load_commands[lc_key][0] + struct.calcsize(lc_layouts[LC_SEGMENT_64])
+                section_header = list(struct.unpack_from(section64_header_layout, macho_data, section_header_offset))
+                section_header[3] = blob_size
+                struct.pack_into(section64_header_layout, macho_data, section_header_offset, *section_header)
+
+            layout = LC_SEGMENT_64 if lc_key in [b'__PANDA', b'__LINKEDIT'] else lc_key
+            struct.pack_into(lc_layouts[layout], macho_data, load_commands[lc_key][0], *load_commands[lc_key][1])
+
+        blob_offset = load_commands[b'__PANDA'][1][5]
+
+        # Write in some null bytes until we write in the actual blob.
+        macho_data[blob_offset:blob_offset] = b'\0' * blob_size
+
+        return blob_offset
 
     def makeModuleDef(self, mangledName, code):
         result = ''
@@ -2413,8 +2539,10 @@ class PandaModuleFinder(modulefinder.ModuleFinder):
                     if "*" in fromlist:
                         have_star = 1
                     fromlist = [f for f in fromlist if f != "*"]
-                if what == "absolute_import": level = 0
-                else: level = -1
+                if what == "absolute_import":
+                    level = 0
+                else:
+                    level = -1
                 self._safe_import_hook(name, m, fromlist, level=level)
                 if have_star:
                     # We've encountered an "import *". If it is a Python module,

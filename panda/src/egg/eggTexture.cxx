@@ -1065,8 +1065,8 @@ as_transform() {
  * return false.
  */
 bool EggTexture::
-egg_start_parse_body() {
-  egg_start_texture_body();
+egg_start_parse_body(EggLexerState &state) {
+  egg_start_texture_body(state);
   return true;
 }
 

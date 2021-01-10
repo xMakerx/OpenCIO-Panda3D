@@ -830,10 +830,12 @@ set_active(bool active) {
     } else {
       // ...deactivate the sound.
       if (status()==PLAYING) {
+        // Store off the current time so we can resume from where we paused.
+        _start_time = get_time();
         stop();
-        if (_loop_count==0) {
+        if (_loop_count == 0) {
           // ...we're pausing a looping sound.
-          _paused=true;
+          _paused = true;
         }
       }
     }

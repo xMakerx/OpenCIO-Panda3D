@@ -43,7 +43,7 @@ PythonCallbackObject(PyObject *function) {
 
 #if !defined(SIMPLE_THREADS) && defined(WITH_THREAD)
   // Ensure that the Python threading system is initialized and ready to go.
-
+  // WITH_THREAD symbol defined within Python.h
   Py_Initialize();
 
 #if PY_VERSION_HEX < 0x03090000

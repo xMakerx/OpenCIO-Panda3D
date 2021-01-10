@@ -346,7 +346,6 @@ x11GraphicsPipe(const std::string &display) :
   XFree(im_supported_styles);
   */
 
-<<<<<<< HEAD
   // Restore the previous locale.
   if (!saved_locale.empty()) {
     setlocale(LC_ALL, saved_locale.c_str());
@@ -365,6 +364,8 @@ x11GraphicsPipe(const std::string &display) :
   _net_wm_state_add = XInternAtom(_display, "_NET_WM_STATE_ADD", false);
   _net_wm_state_remove = XInternAtom(_display, "_NET_WM_STATE_REMOVE", false);
   _net_wm_bypass_compositor = XInternAtom(_display, "_NET_WM_BYPASS_COMPOSITOR", false);
+  _net_wm_state_maximized_vert = XInternAtom(_display, "_NET_WM_STATE_MAXIMIZED_VERT", false);
+  _net_wm_state_maximized_horz = XInternAtom(_display, "_NET_WM_STATE_MAXIMIZED_HORZ", false);
 }
 
 /**
@@ -384,7 +385,7 @@ x11GraphicsPipe::
 /**
  * Enables raw mouse mode for this display.  Returns false if unsupported.
  */
-INLINE bool x11GraphicsPipe::
+bool x11GraphicsPipe::
 enable_raw_mouse() {
   if (_num_raw_mouse_windows > 0) {
     // Already enabled by another window.

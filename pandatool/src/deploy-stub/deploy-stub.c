@@ -71,36 +71,6 @@ static struct _inittab extensions[] = {
 static wchar_t *log_pathw = NULL;
 #endif
 
-#if defined(_WIN32) && PY_VERSION_HEX < 0x03060000
-static int supports_code_page(UINT cp) {
-  if (cp == 0) {
-    cp = GetACP();
-  }
-
-  /* Shortcut, because we know that these encodings are bundled by default--
-   * see FreezeTool.py and Python's encodings/aliases.py */
-  if (cp != 0 && cp != 1252 && cp != 367 && cp != 437 && cp != 850 && cp != 819) {
-    const struct _frozen *moddef;
-    char codec[100];
-
-    /* Check if the codec was frozen into the program.  We can't check this
-     * using _PyCodec_Lookup, since Python hasn't been initialized yet. */
-    PyOS_snprintf(codec, sizeof(codec), "encodings.cp%u", (unsigned int)cp);
-
-    moddef = PyImport_FrozenModules;
-    while (moddef->name) {
-      if (strcmp(moddef->name, codec) == 0) {
-        return 1;
-      }
-      ++moddef;
-    }
-    return 0;
-  }
-
-  return 1;
-}
-#endif
-
 /**
  * Sets the main_dir field of the blobinfo structure, but only if it wasn't
  * already set.
@@ -338,7 +308,6 @@ static int setup_logging(const char *path, int append) {
 /**
  * Sets the line_buffering property on a TextIOWrapper object.
  */
-#if PY_MAJOR_VERSION >= 3
 static int enable_line_buffering(PyObject *file) {
 #if PY_VERSION_HEX >= 0x03070000
   /* Python 3.7 has a useful reconfigure() method. */
@@ -350,15 +319,20 @@ static int enable_line_buffering(PyObject *file) {
   if (method != NULL) {
     PyObject *result = PyObject_Call(method, args, kwargs);
     Py_DECREF(method);
+    Py_DECREF(kwargs);
+    Py_DECREF(args);
     if (result != NULL) {
       Py_DECREF(result);
     } else {
       PyErr_Clear();
       return 0;
     }
+  } else {
+    Py_DECREF(kwargs);
+    Py_DECREF(args);
+    PyErr_Clear();
+    return 0;
   }
-  Py_DECREF(kwargs);
-  Py_DECREF(args);
 #else
   /* Older versions just don't expose a way to reconfigure(), but it's still
      safe to override the property; we just have to use a hack to do it,
@@ -378,7 +352,6 @@ static int enable_line_buffering(PyObject *file) {
 #endif
   return 1;
 }
-#endif
 
 /* Main program */
 
@@ -405,19 +378,6 @@ int Py_FrozenMain(int argc, char **argv)
     if (argc > 0) {
         argv_copy = (wchar_t **)alloca(sizeof(wchar_t *) * argc);
         argv_copy2 = (wchar_t **)alloca(sizeof(wchar_t *) * argc);
-    }
-#endif
-
-#if defined(MS_WINDOWS) && PY_VERSION_HEX >= 0x03040000 && PY_VERSION_HEX < 0x03060000
-    if (!supports_code_page(GetConsoleOutputCP()) ||
-        !supports_code_page(GetConsoleCP())) {
-      /* Revert to the active codepage, and tell Python to use the 'mbcs'
-       * encoding (which always uses the active codepage).  In 99% of cases,
-       * this will be the same thing anyway. */
-      UINT acp = GetACP();
-      SetConsoleCP(acp);
-      SetConsoleOutputCP(acp);
-      Py_SetStandardStreamEncoding("mbcs", NULL);
     }
 #endif
 
@@ -471,65 +431,8 @@ int Py_FrozenMain(int argc, char **argv)
     PyWinFreeze_ExeInit();
 #endif
 
-<<<<<<< HEAD
-=======
-#if defined(MS_WINDOWS) && PY_VERSION_HEX < 0x03040000
-    /* We can't rely on our overriding of the standard I/O to work on older
-     * versions of Python, since they are compiled with an incompatible CRT.
-     * The best solution I've found was to just replace sys.stdout/stderr with
-     * the log file reopened in append mode (which requires not locking it for
-     * write, and also passing in _O_APPEND above, and disabling buffering).
-     * It's not the most elegant solution, but it's better than crashing. */
-#if PY_MAJOR_VERSION < 3
-    if (log_pathw != NULL) {
-      PyObject *uniobj = PyUnicode_FromWideChar(log_pathw, (Py_ssize_t)wcslen(log_pathw));
-      PyObject *file = PyObject_CallFunction((PyObject*)&PyFile_Type, "Nsi", uniobj, "a", 0);
-
-      if (file != NULL) {
-        PyFile_SetEncodingAndErrors(file, "utf-8", NULL);
-
-        PySys_SetObject("stdout", file);
-        PySys_SetObject("stderr", file);
-        PySys_SetObject("__stdout__", file);
-        PySys_SetObject("__stderr__", file);
-
-        /* Be sure to disable buffering, otherwise we'll get overlap */
-        setbuf(stdout, (char *)NULL);
-        setbuf(stderr, (char *)NULL);
-      }
-    }
-    else
-#endif
-    if (!supports_code_page(GetConsoleOutputCP()) ||
-        !supports_code_page(GetConsoleCP())) {
-      /* Same hack as before except for Python 2.7, which doesn't seem to have
-       * a way to set the encoding ahead of time, and setting PYTHONIOENCODING
-       * doesn't seem to work.  Fortunately, Python 2.7 doesn't usually start
-       * causing codec errors until the first print statement. */
-      PyObject *sys_stream;
-      UINT acp = GetACP();
-      SetConsoleCP(acp);
-      SetConsoleOutputCP(acp);
-
-      sys_stream = PySys_GetObject("stdin");
-      if (sys_stream && PyFile_Check(sys_stream)) {
-        PyFile_SetEncodingAndErrors(sys_stream, "mbcs", NULL);
-      }
-      sys_stream = PySys_GetObject("stdout");
-      if (sys_stream && PyFile_Check(sys_stream)) {
-        PyFile_SetEncodingAndErrors(sys_stream, "mbcs", NULL);
-      }
-      sys_stream = PySys_GetObject("stderr");
-      if (sys_stream && PyFile_Check(sys_stream)) {
-        PyFile_SetEncodingAndErrors(sys_stream, "mbcs", NULL);
-      }
-    }
-#endif
-
-#if defined(MS_WINDOWS) && PY_VERSION_HEX >= 0x03040000
     /* Ensure that line buffering is enabled on the output streams. */
     if (!unbuffered) {
-      /* Python 3.7 has a useful reconfigure() method. */
       PyObject *sys_stream;
       sys_stream = PySys_GetObject("__stdout__");
       if (sys_stream && !enable_line_buffering(sys_stream)) {
