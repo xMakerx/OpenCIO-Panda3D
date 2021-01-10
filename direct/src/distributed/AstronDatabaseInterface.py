@@ -1,9 +1,9 @@
 from pandac.PandaModules import *
-from MsgTypes import *
+from .MsgTypes import *
 from direct.directnotify import DirectNotifyGlobal
-from ConnectionRepository import ConnectionRepository
-from PyDatagram import PyDatagram
-from PyDatagramIterator import PyDatagramIterator
+from .ConnectionRepository import ConnectionRepository
+from .PyDatagram import PyDatagram
+from .PyDatagramIterator import PyDatagramIterator
 
 class AstronDatabaseInterface:
     """

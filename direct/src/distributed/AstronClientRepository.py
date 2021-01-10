@@ -1,8 +1,8 @@
 """AstronClientRepository module: contains the AstronClientRepository class"""
 
 from direct.directnotify import DirectNotifyGlobal
-from ClientRepositoryBase import ClientRepositoryBase
-from MsgTypes import *
+from .ClientRepositoryBase import ClientRepositoryBase
+from .MsgTypes import *
 from direct.distributed.PyDatagram import PyDatagram
 from panda3d.direct import STUint16, STUint32
 

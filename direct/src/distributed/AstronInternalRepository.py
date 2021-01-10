@@ -1,13 +1,13 @@
 from pandac.PandaModules import *
-from MsgTypes import *
+from .MsgTypes import *
 from direct.showbase import ShowBase # __builtin__.config
 from direct.task.TaskManagerGlobal import * # taskMgr
 from direct.directnotify import DirectNotifyGlobal
-from ConnectionRepository import ConnectionRepository
-from PyDatagram import PyDatagram
-from PyDatagramIterator import PyDatagramIterator
-from AstronDatabaseInterface import AstronDatabaseInterface
-from NetMessenger import NetMessenger
+from .ConnectionRepository import ConnectionRepository
+from .PyDatagram import PyDatagram
+from .PyDatagramIterator import PyDatagramIterator
+from .AstronDatabaseInterface import AstronDatabaseInterface
+from .NetMessenger import NetMessenger
 import collections
 
 # Helper functions for logging output:
