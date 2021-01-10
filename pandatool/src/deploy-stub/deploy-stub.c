@@ -24,6 +24,8 @@
 
 #include <locale.h>
 
+#include "structmember.h"
+
 /* Leave room for future expansion.  We only read pointer 0, but there are
    other pointers that are being read by configPageManager.cxx. */
 #define MAX_NUM_POINTERS 24
@@ -431,6 +433,7 @@ int Py_FrozenMain(int argc, char **argv)
     PyWinFreeze_ExeInit();
 #endif
 
+#ifdef MS_WINDOWS
     /* Ensure that line buffering is enabled on the output streams. */
     if (!unbuffered) {
       PyObject *sys_stream;
