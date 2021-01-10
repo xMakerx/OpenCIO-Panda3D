@@ -120,9 +120,9 @@ get_properties(FrameBufferProperties &properties,
   properties.set_depth_bits(depth_size);
   properties.set_multisamples(samples);
 
-  // Set both hardware and software bits, indicating not-yet-known.
-  properties.set_force_software(1);
-  properties.set_force_hardware(1);
+  // "slow" likely indicates no hardware acceleration.
+  properties.set_force_software(slow);
+  properties.set_force_hardware(!slow);
 }
 
 /**
@@ -223,6 +223,20 @@ choose_pixel_format(const FrameBufferProperties &properties,
     int err = eglGetError();
     if (_context && err == EGL_SUCCESS) {
       if (_visual) {
+        // This is set during window creation, but for now we have to pretend
+        // that we can honor the request, if we support the extension.
+        if (properties.get_srgb_color()) {
+          const char *extensions = eglQueryString(_egl_display, EGL_EXTENSIONS);
+          if (extensions != nullptr) {
+            vector_string tokens;
+            extract_words(extensions, tokens);
+
+            if (std::find(tokens.begin(), tokens.end(), "EGL_KHR_gl_colorspace") != tokens.end()) {
+              best_props.set_srgb_color(true);
+            }
+          }
+        }
+
         _fbprops = best_props;
         delete[] configs;
         return;
@@ -255,17 +269,9 @@ reset() {
   GLESGraphicsStateGuardian::reset();
 #endif
 
-  // If "Mesa" is present, assume software.  However, if "Mesa DRI" is found,
-  // it's actually a Mesa-based OpenGL layer running over a hardware driver.
-  if (_gl_renderer == "Software Rasterizer" ||
-      (_gl_renderer.find("Mesa") != std::string::npos &&
-       _gl_renderer.find("Mesa DRI") == std::string::npos)) {
-    // It's Mesa, therefore probably a software context.
+  if (_gl_renderer == "Software Rasterizer") {
     _fbprops.set_force_software(1);
     _fbprops.set_force_hardware(0);
-  } else {
-    _fbprops.set_force_hardware(1);
-    _fbprops.set_force_software(0);
   }
 }
 

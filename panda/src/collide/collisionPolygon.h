@@ -42,6 +42,8 @@ public:
 
   virtual CollisionSolid *make_copy();
 
+  static bool verify_points(const LPoint3 *begin, const LPoint3 *end);
+
 PUBLISHED:
   virtual LPoint3 get_collision_origin() const;
 

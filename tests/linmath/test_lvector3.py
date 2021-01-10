@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 from math import floor, ceil
 
 from panda3d.core import Vec2, Vec3, Vec3F, Vec3D
@@ -29,6 +30,9 @@ def test_ceil():
     assert rounded_vector.x == 3
     assert rounded_vector.y == -2
     assert rounded_vector.z == 4
+=======
+from panda3d.core import Vec2, Vec3, Vec3F, Vec3D
+>>>>>>> d39d40b1fc4dee02ad913e033790a5a6a591c659
 
 
 def test_vec3_creation():

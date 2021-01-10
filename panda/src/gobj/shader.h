@@ -230,6 +230,14 @@ public:
 
     // Textures for materials that need to be sampled in the shader.
     STO_material_texture,
+    STO_ff_stage_i,
+    STO_stage_modulate_i,
+    STO_stage_add_i,
+    STO_stage_normal_i,
+    STO_stage_height_i,
+    STO_stage_selector_i,
+    STO_stage_gloss_i,
+    STO_stage_emission_i,
   };
 
   enum ShaderArgClass {

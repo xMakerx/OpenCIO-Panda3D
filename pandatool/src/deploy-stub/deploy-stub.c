@@ -335,6 +335,51 @@ static int setup_logging(const char *path, int append) {
 #endif
 }
 
+/**
+ * Sets the line_buffering property on a TextIOWrapper object.
+ */
+#if PY_MAJOR_VERSION >= 3
+static int enable_line_buffering(PyObject *file) {
+#if PY_VERSION_HEX >= 0x03070000
+  /* Python 3.7 has a useful reconfigure() method. */
+  PyObject *kwargs = _PyDict_NewPresized(1);
+  PyDict_SetItemString(kwargs, "line_buffering", Py_True);
+  PyObject *args = PyTuple_New(0);
+
+  PyObject *method = PyObject_GetAttrString(file, "reconfigure");
+  if (method != NULL) {
+    PyObject *result = PyObject_Call(method, args, kwargs);
+    Py_DECREF(method);
+    if (result != NULL) {
+      Py_DECREF(result);
+    } else {
+      PyErr_Clear();
+      return 0;
+    }
+  }
+  Py_DECREF(kwargs);
+  Py_DECREF(args);
+#else
+  /* Older versions just don't expose a way to reconfigure(), but it's still
+     safe to override the property; we just have to use a hack to do it,
+     because it's officially marked "readonly". */
+
+  PyTypeObject *type = Py_TYPE(file);
+  PyMemberDef *member = type->tp_members;
+
+  while (member != NULL && member->name != NULL) {
+    if (strcmp(member->name, "line_buffering") == 0) {
+      *((char *)file + member->offset) = 1;
+      return 1;
+    }
+    ++member;
+  }
+  fflush(stdout);
+#endif
+  return 1;
+}
+#endif
+
 /* Main program */
 
 #ifdef WIN_UNICODE
@@ -345,8 +390,10 @@ int Py_FrozenMain(int argc, char **argv)
 {
     char *p;
     int n, sts = 1;
-    int inspect = 0;
     int unbuffered = 0;
+#ifndef NDEBUG
+    int inspect = 0;
+#endif
 
 #ifndef WIN_UNICODE
     int i;
@@ -378,8 +425,10 @@ int Py_FrozenMain(int argc, char **argv)
     Py_NoSiteFlag = 0;
     Py_NoUserSiteDirectory = 1;
 
+#ifndef NDEBUG
     if ((p = Py_GETENV("PYTHONINSPECT")) && *p != '\0')
         inspect = 1;
+#endif
     if ((p = Py_GETENV("PYTHONUNBUFFERED")) && *p != '\0')
         unbuffered = 1;
 
@@ -422,6 +471,80 @@ int Py_FrozenMain(int argc, char **argv)
     PyWinFreeze_ExeInit();
 #endif
 
+<<<<<<< HEAD
+=======
+#if defined(MS_WINDOWS) && PY_VERSION_HEX < 0x03040000
+    /* We can't rely on our overriding of the standard I/O to work on older
+     * versions of Python, since they are compiled with an incompatible CRT.
+     * The best solution I've found was to just replace sys.stdout/stderr with
+     * the log file reopened in append mode (which requires not locking it for
+     * write, and also passing in _O_APPEND above, and disabling buffering).
+     * It's not the most elegant solution, but it's better than crashing. */
+#if PY_MAJOR_VERSION < 3
+    if (log_pathw != NULL) {
+      PyObject *uniobj = PyUnicode_FromWideChar(log_pathw, (Py_ssize_t)wcslen(log_pathw));
+      PyObject *file = PyObject_CallFunction((PyObject*)&PyFile_Type, "Nsi", uniobj, "a", 0);
+
+      if (file != NULL) {
+        PyFile_SetEncodingAndErrors(file, "utf-8", NULL);
+
+        PySys_SetObject("stdout", file);
+        PySys_SetObject("stderr", file);
+        PySys_SetObject("__stdout__", file);
+        PySys_SetObject("__stderr__", file);
+
+        /* Be sure to disable buffering, otherwise we'll get overlap */
+        setbuf(stdout, (char *)NULL);
+        setbuf(stderr, (char *)NULL);
+      }
+    }
+    else
+#endif
+    if (!supports_code_page(GetConsoleOutputCP()) ||
+        !supports_code_page(GetConsoleCP())) {
+      /* Same hack as before except for Python 2.7, which doesn't seem to have
+       * a way to set the encoding ahead of time, and setting PYTHONIOENCODING
+       * doesn't seem to work.  Fortunately, Python 2.7 doesn't usually start
+       * causing codec errors until the first print statement. */
+      PyObject *sys_stream;
+      UINT acp = GetACP();
+      SetConsoleCP(acp);
+      SetConsoleOutputCP(acp);
+
+      sys_stream = PySys_GetObject("stdin");
+      if (sys_stream && PyFile_Check(sys_stream)) {
+        PyFile_SetEncodingAndErrors(sys_stream, "mbcs", NULL);
+      }
+      sys_stream = PySys_GetObject("stdout");
+      if (sys_stream && PyFile_Check(sys_stream)) {
+        PyFile_SetEncodingAndErrors(sys_stream, "mbcs", NULL);
+      }
+      sys_stream = PySys_GetObject("stderr");
+      if (sys_stream && PyFile_Check(sys_stream)) {
+        PyFile_SetEncodingAndErrors(sys_stream, "mbcs", NULL);
+      }
+    }
+#endif
+
+#if defined(MS_WINDOWS) && PY_VERSION_HEX >= 0x03040000
+    /* Ensure that line buffering is enabled on the output streams. */
+    if (!unbuffered) {
+      /* Python 3.7 has a useful reconfigure() method. */
+      PyObject *sys_stream;
+      sys_stream = PySys_GetObject("__stdout__");
+      if (sys_stream && !enable_line_buffering(sys_stream)) {
+        fprintf(stderr, "Failed to enable line buffering on sys.stdout\n");
+        fflush(stderr);
+      }
+      sys_stream = PySys_GetObject("__stderr__");
+      if (sys_stream && !enable_line_buffering(sys_stream)) {
+        fprintf(stderr, "Failed to enable line buffering on sys.stderr\n");
+        fflush(stderr);
+      }
+    }
+#endif
+
+>>>>>>> d39d40b1fc4dee02ad913e033790a5a6a591c659
     if (Py_VerboseFlag)
         fprintf(stderr, "Python %s\n%s\n",
             Py_GetVersion(), Py_GetCopyright());
@@ -473,8 +596,10 @@ int Py_FrozenMain(int argc, char **argv)
     else
         sts = 0;
 
+#ifndef NDEBUG
     if (inspect && isatty((int)fileno(stdin)))
         sts = PyRun_AnyFile(stdin, "<stdin>") != 0;
+#endif
 
 #ifdef MS_WINDOWS
     PyWinFreeze_ExeTerm();
@@ -485,6 +610,10 @@ int Py_FrozenMain(int argc, char **argv)
 error:
     if (argv_copy2) {
         for (i = 0; i < argc; i++) {
+<<<<<<< HEAD
+=======
+#if PY_MAJOR_VERSION > 3 || PY_MINOR_VERSION >= 4
+>>>>>>> d39d40b1fc4dee02ad913e033790a5a6a591c659
             PyMem_RawFree(argv_copy2[i]);
         }
     }
@@ -654,6 +783,9 @@ int main(int argc, char *argv[]) {
   // Run frozen application
   PyImport_FrozenModules = blobinfo.pointers[0];
   retval = Py_FrozenMain(argc, argv);
+
+  fflush(stdout);
+  fflush(stderr);
 
   unmap_blob(blob);
   return retval;

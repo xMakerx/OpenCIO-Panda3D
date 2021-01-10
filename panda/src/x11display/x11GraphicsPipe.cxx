@@ -16,6 +16,7 @@
 #include "config_x11display.h"
 #include "frameBufferProperties.h"
 #include "displayInformation.h"
+#include "pstrtod.h"
 
 #include <dlfcn.h>
 
@@ -345,6 +346,7 @@ x11GraphicsPipe(const std::string &display) :
   XFree(im_supported_styles);
   */
 
+<<<<<<< HEAD
   // Restore the previous locale.
   if (!saved_locale.empty()) {
     setlocale(LC_ALL, saved_locale.c_str());

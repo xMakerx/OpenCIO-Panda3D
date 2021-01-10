@@ -595,6 +595,8 @@ init_device() {
               _buttons.push_back(ButtonState(GamepadButton::hat_left()));
               _buttons.push_back(ButtonState(GamepadButton::hat_right()));
             }
+            _buttons[_dpad_left_button]._state = S_up;
+            _buttons[_dpad_left_button+1]._state = S_up;
           }
           break;
         case ABS_HAT0Y:
@@ -608,6 +610,8 @@ init_device() {
               _buttons.push_back(ButtonState(GamepadButton::hat_up()));
               _buttons.push_back(ButtonState(GamepadButton::hat_down()));
             }
+            _buttons[_dpad_up_button]._state = S_up;
+            _buttons[_dpad_up_button+1]._state = S_up;
           }
           break;
         case ABS_HAT2X:
@@ -802,23 +806,33 @@ process_events() {
         button_changed(_dpad_up_button, events[i].value < 0);
         button_changed(_dpad_up_button+1, events[i].value > 0);
       }
-      nassertd(code >= 0 && (size_t)code < _axis_indices.size()) break;
-      index = _axis_indices[code];
-      if (index >= 0) {
-        axis_changed(index, events[i].value);
+      if (code >= 0 && (size_t)code < _axis_indices.size()) {
+        index = _axis_indices[code];
+        if (index >= 0) {
+          axis_changed(index, events[i].value);
+        }
+      }
+      else if (device_cat.is_debug()) {
+        device_cat.debug()
+          << "Ignoring EV_ABS event with unknown code " << code << "\n";
       }
       break;
 
     case EV_KEY:
-      nassertd(code >= 0 && (size_t)code < _button_indices.size()) break;
-      index = _button_indices[code];
-      if (index >= 0) {
-        button_changed(index, events[i].value != 0);
+      if (code >= 0 && (size_t)code < _button_indices.size()) {
+        index = _button_indices[code];
+        if (index >= 0) {
+          button_changed(index, events[i].value != 0);
+        }
+        if (code == _ltrigger_code) {
+          axis_changed(_ltrigger_axis, events[i].value);
+        } else if (code == _rtrigger_code) {
+          axis_changed(_ltrigger_axis + 1, events[i].value);
+        }
       }
-      if (code == _ltrigger_code) {
-        axis_changed(_ltrigger_axis, events[i].value);
-      } else if (code == _rtrigger_code) {
-        axis_changed(_ltrigger_axis + 1, events[i].value);
+      else if (device_cat.is_debug()) {
+        device_cat.debug()
+          << "Ignoring EV_KEY event with unknown code " << code << "\n";
       }
       break;
 

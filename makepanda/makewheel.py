@@ -381,7 +381,8 @@ class WheelFile(object):
             # On macOS, if no fat wheel was requested, extract the right architecture.
             if sys.platform == "darwin" and is_fat_file(source_path) \
                 and not self.platform.endswith("_intel") \
-                and "_fat" not in self.platform:
+                and "_fat" not in self.platform \
+                and "_universal" not in self.platform:
 
                 if self.platform.endswith("_x86_64"):
                     arch = 'x86_64'
@@ -457,7 +458,7 @@ class WheelFile(object):
                         self.consider_add_dependency(target_dep, dep)
 
                 subprocess.call(["strip", "-s", temp.name])
-                subprocess.call(["patchelf", "--set-rpath", "$ORIGIN", temp.name])
+                subprocess.call(["patchelf", "--force-rpath", "--set-rpath", "$ORIGIN", temp.name])
 
             source_path = temp.name
 
@@ -564,6 +565,7 @@ def makewheel(version, output_dir, platform=None):
         libs_dir = join(output_dir, "bin")
     else:
         libs_dir = join(output_dir, "lib")
+    ext_mod_dir = get_python_ext_module_dir()
     license_src = "LICENSE"
     readme_src = "README.md"
 
@@ -595,7 +597,7 @@ def makewheel(version, output_dir, platform=None):
     whl.lib_path = [libs_dir]
 
     if sys.platform == "win32":
-        whl.lib_path.append(join(output_dir, "python", "DLLs"))
+        whl.lib_path.append(ext_mod_dir)
 
     if platform.startswith("manylinux"):
         # On manylinux1, we pick up all libraries except for the ones specified
@@ -608,6 +610,26 @@ def makewheel(version, output_dir, platform=None):
             whl.lib_path += ["/lib", "/usr/lib"]
 
         whl.ignore_deps.update(MANYLINUX_LIBS)
+
+    # Add libpython for deployment.
+    if sys.platform in ('win32', 'cygwin'):
+        pylib_name = 'python{0}{1}.dll'.format(*sys.version_info)
+        pylib_path = os.path.join(get_config_var('BINDIR'), pylib_name)
+    elif sys.platform == 'darwin':
+        pylib_name = 'libpython{0}.{1}.dylib'.format(*sys.version_info)
+        pylib_path = os.path.join(get_config_var('LIBDIR'), pylib_name)
+    else:
+        pylib_name = get_config_var('LDLIBRARY')
+        pylib_arch = get_config_var('MULTIARCH')
+        libdir = get_config_var('LIBDIR')
+        if pylib_arch and os.path.exists(os.path.join(libdir, pylib_arch, pylib_name)):
+            pylib_path = os.path.join(libdir, pylib_arch, pylib_name)
+        else:
+            pylib_path = os.path.join(libdir, pylib_name)
+
+    # If Python was linked statically, we don't need to include this.
+    if not pylib_name.endswith('.a'):
+        whl.write_file('deploy_libs/' + pylib_name, pylib_path)
 
     # Add the trees with Python modules.
     whl.write_directory('direct', direct_dir)
@@ -648,7 +670,6 @@ if __debug__:
     # And copy the extension modules from the Python installation into the
     # deploy_libs directory, for use by deploy-ng.
     ext_suffix = '.pyd' if sys.platform in ('win32', 'cygwin') else '.so'
-    ext_mod_dir = get_python_ext_module_dir()
 
     for file in os.listdir(ext_mod_dir):
         if file.endswith(ext_suffix):
@@ -737,26 +758,6 @@ if __debug__:
     whl.write_file(info_dir + '/LICENSE.txt', license_src)
     whl.write_file(info_dir + '/README.md', readme_src)
     whl.write_file_data(info_dir + '/top_level.txt', 'direct\npanda3d\npandac\npanda3d_tools\n')
-
-    # Add libpython for deployment
-    if sys.platform in ('win32', 'cygwin'):
-        pylib_name = 'python{0}{1}.dll'.format(*sys.version_info)
-        pylib_path = os.path.join(get_config_var('BINDIR'), pylib_name)
-    elif sys.platform == 'darwin':
-        pylib_name = 'libpython{0}.{1}.dylib'.format(*sys.version_info)
-        pylib_path = os.path.join(get_config_var('LIBDIR'), pylib_name)
-    else:
-        pylib_name = get_config_var('LDLIBRARY')
-        pylib_arch = get_config_var('MULTIARCH')
-        libdir = get_config_var('LIBDIR')
-        if pylib_arch and os.path.exists(os.path.join(libdir, pylib_arch, pylib_name)):
-            pylib_path = os.path.join(libdir, pylib_arch, pylib_name)
-        else:
-            pylib_path = os.path.join(libdir, pylib_name)
-
-    # If Python was linked statically, we don't need to include this.
-    if not pylib_name.endswith('.a'):
-        whl.write_file('deploy_libs/' + pylib_name, pylib_path)
 
     whl.close()
 

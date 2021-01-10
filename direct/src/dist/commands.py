@@ -218,6 +218,8 @@ class build_apps(setuptools.Command):
             'dciman32.dll', 'comdlg32.dll', 'comctl32.dll', 'ole32.dll',
             'oleaut32.dll', 'gdiplus.dll', 'winmm.dll', 'iphlpapi.dll',
             'msvcrt.dll', 'kernelbase.dll', 'msimg32.dll', 'msacm32.dll',
+            'setupapi.dll', 'version.dll', 'userenv.dll', 'netapi32.dll',
+            'crypt32.dll',
 
             # manylinux1/linux
             'libdl.so.*', 'libstdc++.so.*', 'libm.so.*', 'libgcc_s.so.*',
@@ -233,8 +235,50 @@ class build_apps(setuptools.Command):
             '/usr/lib/libSystem.*.dylib',
             '/usr/lib/libbz2.*.dylib',
             '/usr/lib/libedit.*.dylib',
+            '/usr/lib/libffi.dylib',
+            '/usr/lib/libauditd.0.dylib',
+            '/usr/lib/libgermantok.dylib',
+            '/usr/lib/liblangid.dylib',
+            '/usr/lib/libarchive.2.dylib',
+            '/usr/lib/libipsec.A.dylib',
+            '/usr/lib/libpanel.5.4.dylib',
+            '/usr/lib/libiodbc.2.1.18.dylib',
+            '/usr/lib/libhunspell-1.2.0.0.0.dylib',
+            '/usr/lib/libsqlite3.dylib',
+            '/usr/lib/libpam.1.dylib',
+            '/usr/lib/libtidy.A.dylib',
+            '/usr/lib/libDHCPServer.A.dylib',
+            '/usr/lib/libpam.2.dylib',
+            '/usr/lib/libXplugin.1.dylib',
+            '/usr/lib/libxslt.1.dylib',
+            '/usr/lib/libiodbcinst.2.1.18.dylib',
+            '/usr/lib/libBSDPClient.A.dylib',
+            '/usr/lib/libsandbox.1.dylib',
+            '/usr/lib/libform.5.4.dylib',
+            '/usr/lib/libbsm.0.dylib',
+            '/usr/lib/libMatch.1.dylib',
+            '/usr/lib/libresolv.9.dylib',
+            '/usr/lib/libcharset.1.dylib',
+            '/usr/lib/libxml2.2.dylib',
+            '/usr/lib/libiconv.2.dylib',
+            '/usr/lib/libScreenReader.dylib',
+            '/usr/lib/libdtrace.dylib',
+            '/usr/lib/libicucore.A.dylib',
+            '/usr/lib/libsasl2.2.dylib',
+            '/usr/lib/libpcap.A.dylib',
+            '/usr/lib/libexslt.0.dylib',
+            '/usr/lib/libcurl.4.dylib',
+            '/usr/lib/libncurses.5.4.dylib',
+            '/usr/lib/libxar.1.dylib',
+            '/usr/lib/libmenu.5.4.dylib',
             '/System/Library/**',
         ]
+
+        if sys.version_info >= (3, 5):
+            # Python 3.5+ requires at least Windows Vista to run anyway, so we
+            # shouldn't warn about DLLs that are shipped with Vista.
+            self.exclude_dependencies += ['bcrypt.dll']
+
         self.package_data_dirs = {}
 
         # We keep track of the zip files we've opened.
@@ -364,7 +408,8 @@ class build_apps(setuptools.Command):
             abi_tag += 'm'
 
         whldir = os.path.join(whlcache, '_'.join((platform, abi_tag)))
-        os.makedirs(whldir, exist_ok=True)
+        if not os.path.isdir(whldir):
+            os.makedirs(whldir)
 
         # Remove any .zip files. These are built from a VCS and block for an
         # interactive prompt on subsequent downloads.
@@ -374,12 +419,13 @@ class build_apps(setuptools.Command):
                     os.remove(os.path.join(whldir, whl))
 
         pip_args = [
+            '--disable-pip-version-check',
             'download',
             '-d', whldir,
             '-r', self.requirements_path,
             '--only-binary', ':all:',
             '--platform', platform,
-            '--abi', abi_tag
+            '--abi', abi_tag,
         ]
 
         if self.use_optimized_wheels:
@@ -483,6 +529,7 @@ class build_apps(setuptools.Command):
 
         path = sys.path[:]
         p3dwhl = None
+        wheelpaths = []
 
         if use_wheels:
             wheelpaths = self.download_wheels(platform)
@@ -623,12 +670,16 @@ class build_apps(setuptools.Command):
                     rootdir = wf.split(os.path.sep, 1)[0]
                     search_path.append(os.path.join(whl, rootdir, '.libs'))
 
+                    # Also look for eg. numpy.libs or Pillow.libs in the root
+                    whl_name = os.path.basename(whl).split('-', 1)[0]
+                    search_path.append(os.path.join(whl, whl_name + '.libs'))
+
                     # Also look for more specific per-package cases, defined in
                     # PACKAGE_LIB_DIRS at the top of this file.
-                    whl_name = os.path.basename(whl).split('-', 1)[0]
                     extra_dirs = PACKAGE_LIB_DIRS.get(whl_name, [])
                     for extra_dir in extra_dirs:
                         search_path.append(os.path.join(whl, extra_dir.replace('/', os.path.sep)))
+
             return search_path
 
         def create_runtime(appname, mainscript, use_console):
@@ -753,6 +804,7 @@ class build_apps(setuptools.Command):
         for module, source_path in freezer_extras:
             if source_path is not None:
                 # Rename panda3d/core.pyd to panda3d.core.pyd
+                source_path = os.path.normpath(source_path)
                 basename = os.path.basename(source_path)
                 if '.' in module:
                     basename = module.rsplit('.', 1)[0] + '.' + basename
@@ -762,6 +814,25 @@ class build_apps(setuptools.Command):
                 if len(parts) >= 3 and '-' in parts[-2]:
                     parts = parts[:-2] + parts[-1:]
                     basename = '.'.join(parts)
+                if sys.version_info >= (3, 0):
+                    parts = basename.split('.')
+                    if len(parts) >= 3 and '-' in parts[-2]:
+                        parts = parts[:-2] + parts[-1:]
+                        basename = '.'.join(parts)
+
+                # Was this not found in a wheel?  Then we may have a problem,
+                # since it may be for the current platform instead of the target
+                # platform.
+                if use_wheels:
+                    found_in_wheel = False
+                    for whl in wheelpaths:
+                        whl = os.path.normpath(whl)
+                        if source_path.lower().startswith(os.path.join(whl, '').lower()):
+                            found_in_wheel = True
+                            break
+
+                    if not found_in_wheel:
+                        self.warn('{} was not found in any downloaded wheel, is a dependency missing from requirements.txt?'.format(basename))
             else:
                 # Builtin module, but might not be builtin in wheel libs, so double check
                 if module in whl_modules:
@@ -865,6 +936,27 @@ class build_apps(setuptools.Command):
             return check_pattern(fname, include_copy_list) and \
                 not check_pattern(fname, ignore_copy_list)
 
+        def skip_directory(src):
+            # Provides a quick-out for directory checks.  NOT recursive.
+            fn = p3d.Filename.from_os_specific(os.path.normpath(src))
+            path = fn.get_fullpath()
+            fn.make_absolute()
+            abspath = fn.get_fullpath()
+
+            for pattern in ignore_copy_list:
+                if not pattern.pattern.endswith('/*') and \
+                   not pattern.pattern.endswith('/**'):
+                    continue
+
+                pattern_dir = p3d.Filename(pattern.pattern).get_dirname()
+                if abspath.startswith(pattern_dir + '/'):
+                    return True
+
+                if path.startswith(pattern_dir + '/'):
+                    return True
+
+            return False
+
         def copy_file(src, dst):
             src = os.path.normpath(src)
             dst = os.path.normpath(dst)
@@ -905,6 +997,10 @@ class build_apps(setuptools.Command):
         rootdir = os.getcwd()
         for dirname, subdirlist, filelist in os.walk(rootdir):
             dirpath = os.path.relpath(dirname, rootdir)
+            if skip_directory(dirpath):
+                self.announce('skipping directory {}'.format(dirpath))
+                continue
+
             for fname in filelist:
                 src = os.path.join(dirpath, fname)
                 dst = os.path.join(builddir, update_path(src))
@@ -1015,7 +1111,10 @@ class build_apps(setuptools.Command):
         source_dir = os.path.dirname(source_path)
         target_dir = os.path.dirname(target_path)
         base = os.path.basename(target_path)
-        self.copy_dependencies(target_path, target_dir, search_path + [source_dir], base)
+
+        if source_dir not in search_path:
+            search_path = search_path + [source_dir]
+        self.copy_dependencies(target_path, target_dir, search_path, base)
 
     def copy_dependencies(self, target_path, target_dir, search_path, referenced_by):
         """ Copies the dependencies of target_path into target_dir. """
@@ -1030,8 +1129,7 @@ class build_apps(setuptools.Command):
             pe = pefile.PEFile()
             pe.read(fp)
             for lib in pe.imports:
-                if not lib.lower().startswith('api-ms-win-'):
-                    deps.append(lib)
+                deps.append(lib)
 
         elif magic == b'\x7FELF':
             # Elf magic.  Used on (among others) Linux and FreeBSD.
@@ -1350,17 +1448,22 @@ class bdist_apps(setuptools.Command):
         nsi.write('Section "" SecCore\n')
         nsi.write('  SetOutPath "$INSTDIR"\n')
         curdir = ""
+        nsi_dir = p3d.Filename.fromOsSpecific(build_cmd.build_base)
+        build_root_dir = p3d.Filename.fromOsSpecific(build_dir)
         for root, dirs, files in os.walk(build_dir):
             for name in files:
                 basefile = p3d.Filename.fromOsSpecific(os.path.join(root, name))
                 file = p3d.Filename(basefile)
                 file.makeAbsolute()
-                file.makeRelativeTo(build_dir)
-                outdir = file.getDirname().replace('/', '\\')
+                file.makeRelativeTo(nsi_dir)
+                outdir = p3d.Filename(basefile)
+                outdir.makeAbsolute()
+                outdir.makeRelativeTo(build_root_dir)
+                outdir = outdir.getDirname().replace('/', '\\')
                 if curdir != outdir:
                     nsi.write('  SetOutPath "$INSTDIR\\%s"\n' % outdir)
                     curdir = outdir
-                nsi.write('  File "%s"\n' % (basefile.toOsSpecific()))
+                nsi.write('  File "%s"\n' % (file.toOsSpecific()))
         nsi.write('  SetOutPath "$INSTDIR"\n')
         nsi.write('  WriteUninstaller "$INSTDIR\\Uninstall.exe"\n')
         nsi.write('  ; Start menu items\n')

@@ -44,6 +44,12 @@ __report_indent = 3
 
 from panda3d.core import ConfigVariableBool
 
+if sys.version_info >= (3, 0):
+    import builtins
+    from functools import reduce
+    xrange = range
+else:
+    import __builtin__ as builtins
 
 """
 # with one integer positional arg, this uses about 4/5 of the memory of the Functor class below
@@ -1560,7 +1566,10 @@ def appendStr(obj, st):
             return s
         oldStr = Functor(stringer, str(obj))
         stringer = None
-    obj.__str__ = types.MethodType(Functor(appendedStr, oldStr, st), obj, obj.__class__)
+    if sys.version_info >= (3, 0):
+        obj.__str__ = types.MethodType(Functor(appendedStr, oldStr, st), obj)
+    else:
+        obj.__str__ = types.MethodType(Functor(appendedStr, oldStr, st), obj, obj.__class__)
     appendedStr = None
     return obj
 
