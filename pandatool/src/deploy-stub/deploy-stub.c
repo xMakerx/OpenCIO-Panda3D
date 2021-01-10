@@ -544,7 +544,6 @@ int Py_FrozenMain(int argc, char **argv)
     }
 #endif
 
->>>>>>> d39d40b1fc4dee02ad913e033790a5a6a591c659
     if (Py_VerboseFlag)
         fprintf(stderr, "Python %s\n%s\n",
             Py_GetVersion(), Py_GetCopyright());
@@ -610,10 +609,6 @@ int Py_FrozenMain(int argc, char **argv)
 error:
     if (argv_copy2) {
         for (i = 0; i < argc; i++) {
-<<<<<<< HEAD
-=======
-#if PY_MAJOR_VERSION > 3 || PY_MINOR_VERSION >= 4
->>>>>>> d39d40b1fc4dee02ad913e033790a5a6a591c659
             PyMem_RawFree(argv_copy2[i]);
         }
     }

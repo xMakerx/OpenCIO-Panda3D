@@ -2032,28 +2032,14 @@ class ShowBase(DirectObject.DirectObject):
     # backwards compatibility. Please do not add code here, add
     # it to the loader.
     def loadSfx(self, name):
-<<<<<<< HEAD
         #assert self.notify.warning("base.loadSfx is deprecated, use base.loader.loadSfx instead.")
-=======
-        """
-        :deprecated: Use `.Loader.Loader.loadSfx()` instead.
-        """
-        assert self.notify.warning("base.loadSfx is deprecated, use base.loader.loadSfx instead.")
->>>>>>> d39d40b1fc4dee02ad913e033790a5a6a591c659
         return self.loader.loadSfx(name)
 
     # This function should only be in the loader but is here for
     # backwards compatibility. Please do not add code here, add
     # it to the loader.
     def loadMusic(self, name):
-<<<<<<< HEAD
         #assert self.notify.warning("base.loadMusic is deprecated, use base.loader.loadMusic instead.")
-=======
-        """
-        :deprecated: Use `.Loader.Loader.loadMusic()` instead.
-        """
-        assert self.notify.warning("base.loadMusic is deprecated, use base.loader.loadMusic instead.")
->>>>>>> d39d40b1fc4dee02ad913e033790a5a6a591c659
         return self.loader.loadMusic(name)
 
     def playSfx(
